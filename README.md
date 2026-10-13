@@ -42,7 +42,14 @@ KICKPI K1（RK3568B2，双千兆 Maxio MAE0621A）不在 iStoreOS 官方设备�
    `Cannot attach to PHY (error: -19)` 整口不可用。
 2. **maxio.c 用了 6.12 已删除的 API**：`phy_disable_eee_mode()` 在 6.12 无声明 →
    内核编译 `implicit declaration` 直接失败（CI 首跑即挂）。
+   6.12 的等价做法 = `linkmode_zero(phydev->advertising_eee)` + `eee_enabled = false`
+   + `eee_cfg.eee_enabled = false`（与 MMD 写 `MDIO_AN_EEE_ADV=0` 双保险）。
 两条都已加进 workflow 的**板级静态门禁**（编译前断言 DTS 复位脚取值 + maxio.c 的 6.12 EEE 做法）。
+
+> 门禁自身的坑（已修）：第 2 条最初用裸 `grep -q 'phy_disable_eee_mode'` 判定，
+> 而 maxio.c 的**注释**里正好提到这个函数名（用来解释为何改成 6.12 写法）→
+> 假阳性把 CI 拦死。现在先剥掉 `//` 与 `/* */` 注释再判定：注释提及不算，
+> 真实调用仍会被拦下（有正反两个用例自证）。
 
 ## 已知限制（第一版）
 

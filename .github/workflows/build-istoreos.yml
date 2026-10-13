@@ -140,13 +140,18 @@ jobs:
           || { echo "!! 第一口 reset-gpio（gpio3 PA7）缺失，两侧必须与飞牛线一致"; exit 1; }
         echo "    OK  reset-gpio: eth1=gpio2 PD3 / eth0=gpio3 PA7"
         echo "--- 2) Maxio 驱动必须用 6.12 API 关 EEE ---"
-        grep -q 'phy_disable_eee_mode' "$DRV" \
-          && { echo "!! maxio.c 仍在调用 phy_disable_eee_mode()（6.12 已移除 → 内核编译失败）"; exit 1; }
-        grep -q 'phydev->eee_cfg.eee_enabled = false;' "$DRV" \
+        # 注意：只查真实调用。maxio.c 的注释里会提到 phy_disable_eee_mode()
+        # （说明为何改成 6.12 写法），裸 grep 会误判——CI 首跑就是挂在这个假阳性上。
+        # 因此先剥掉 // 与 /* */ 注释，再对剥后代码做判定。
+        python3 -c 'import re,sys; src=open(sys.argv[1],encoding="utf-8",errors="replace").read(); code=re.sub(r"/\*.*?\*/","",src,flags=re.S); code="\n".join(l.split("//")[0] for l in code.splitlines()); open(sys.argv[2],"w").write(code)' "$DRV" /tmp/maxio-code.c
+        if grep -qE '\bphy_disable_eee_mode[[:space:]]*\(' /tmp/maxio-code.c; then
+          echo "!! maxio.c 仍在调用 phy_disable_eee_mode()（6.12 已移除 → 内核编译失败）"; exit 1
+        fi
+        grep -q 'phydev->eee_cfg.eee_enabled = false;' /tmp/maxio-code.c \
           || { echo "!! maxio.c 缺 6.12 关 EEE 的做法（eee_cfg.eee_enabled=false）"; exit 1; }
-        grep -q 'linkmode_zero(phydev->advertising_eee);' "$DRV" \
+        grep -q 'linkmode_zero(phydev->advertising_eee);' /tmp/maxio-code.c \
           || { echo "!! maxio.c 缺 EEE 通告位清零（linkmode_zero(advertising_eee)）"; exit 1; }
-        echo "    OK  maxio.c 使用 6.12 EEE API"
+        echo "    OK  maxio.c 使用 6.12 EEE API（已剥注释判定，无已移除 API 调用）"
         echo "板级静态门禁: ALL PASS"
 
     - name: 更新 feeds
