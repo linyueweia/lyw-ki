@@ -194,7 +194,10 @@ jobs:
           make -j1 PROFILE=kickpi_k1 V=s 2>&1 | tail -150
           exit 1
         }
-        echo "FILE_DATE=_$(date +\"%Y%m%d%H%M\")" >> $GITHUB_ENV
+        # 注意：不要写成 date +\"%Y%m%d%H%M\" —— 转义引号会被 date 当字面量输出，
+        # 于是 FILE_DATE=_\"202610140252\" 带进构件名，GitHub upload-artifact 直接拒绝
+        # （#4 实测：OpenWrt_bin_"202610140252" → The artifact name is not valid）。
+        echo "FILE_DATE=_$(date +%Y%m%d%H%M)" >> "$GITHUB_ENV"
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 上传编译日志
@@ -230,6 +233,7 @@ jobs:
       with:
         name: OpenWrt_firmware${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
+        if-no-files-found: error
 
     - name: 发布 Release
       uses: softprops/action-gh-release@v2
@@ -237,7 +241,7 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: k1-v25.12-${{ env.FILE_DATE }}-${{ github.sha }}
+        tag_name: k1-v25.12${{ env.FILE_DATE }}-${{ github.sha }}
         name: iStoreOS KICKPI K1 固件 ${{ env.FILE_DATE }}
         body: |
           images 与 sha256sums 见本 Release assets。

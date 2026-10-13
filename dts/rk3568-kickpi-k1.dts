@@ -163,14 +163,43 @@
 		vin-supply = <&vcc5v0_usb>;
 	};
 
-	/* M.2 NVMe 3V3（lyw-kf 实机 DTS：直供 vcc3v3_sys 常开） */
+	/* M.2 NVMe 3V3 —— 槽电源受 gpio0 RK_PD4(=pin28) 控制（与 lyw-kk 实机定案一致：
+	   此前写成"无 GPIO 常开"时，pcie30 PHY 初始化时槽上无电 → PHY SRAM init 等不到 →
+	   "rockchip_p3phy_rk3568_init: lock failed" → dw-pcie -ETIMEDOUT → 冷启动 NVMe 不上盘） */
 	vcc3v3_pcie: vcc3v3-pcie-regulator {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_pcie";
 		regulator-always-on;
 		regulator-boot-on;
+		gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pcie3_power_en>;
 		regulator-min-microvolt = <3300000>;
 		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	/* pcie30 PHY 的模拟供电（0.9V/1.8V）：与 lyw-kk 同款常开，
+	   实机日志取证 PHY 初始化(t≈13.9s)早于其供电就绪(t≈15.1s)。
+	   【绝不要给 &pcie30phy 挂 phy-supply】—— 实测会永久 deferred probe。 */
+	pcie30_avdd0v9: pcie30-avdd0v9 {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie30_avdd0v9";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		vin-supply = <&vcc3v3_sys>;
+	};
+
+	pcie30_avdd1v8: pcie30-avdd1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "pcie30_avdd1v8";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
 		vin-supply = <&vcc3v3_sys>;
 	};
 };
@@ -558,7 +587,11 @@
 };
 
 &pcie30phy {
-	data-lanes = <1 2>;
+	/* 不写 data-lanes（与 lyw-kk 金标准对照定论一致）：
+	   R1 官方 DTB、飞牛线（同板实机 NVMe 正常）的 phy@fe8c0000 均无此属性；
+	   仅 T68M（1+1 bifurcation 分叉板）才写 <1 2>。K1 是聚合 x2 NVMe，
+	   照抄后实测 rockchip_p3phy_rk3568_init: lock failed 0x6890000
+	   （check input refclk and power supply）→ phy init -110 → dw-pcie -22。 */
 	status = "okay";
 };
 
@@ -585,6 +618,13 @@
 	pmic {
 		pmic_int: pmic_int {
 			rockchip,pins = <0 RK_PA3 RK_FUNC_GPIO &pcfg_pull_up>;
+		};
+	};
+
+	pcie3 {
+		/* NVMe 槽电源使能脚（与厂商 K1 原厂 dtsi / lyw-kk 实机一致） */
+		pcie3_power_en: pcie3-power-en {
+			rockchip,pins = <0 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
 		};
 	};
 

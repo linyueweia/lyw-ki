@@ -47,13 +47,21 @@ mkdir -p target/linux/rockchip/dts/rk3568
 cp -f "$GITHUB_WORKSPACE/dts/rk3568-kickpi-k1.dts" target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts
 echo ">>> diy-part1: K1 DTS 已就位"
 for marker in '"KICKPI K1"' 'fan53555-reg' 'tx_delay = <0x21>' 'rx_delay = <0x3c>' \
-              'tx_delay = <0x2f>' 'rx_delay = <0x39>' 'RK_PD3' 'RK_PA7' 'post-power-on-delay-ms = <1000>'; do
+              'tx_delay = <0x2f>' 'rx_delay = <0x39>' 'RK_PD3' 'RK_PA7' 'post-power-on-delay-ms = <1000>' \
+              'gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>' 'pcie3-power-en' 'pcie30-avdd0v9' 'pcie30-avdd1v8'; do
     if grep -qF "$marker" target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts; then
         echo "    marker OK: $marker"
     else
         echo "!!! marker NOT FOUND: $marker"; exit 1
     fi
 done
+# 反向门禁：pcie30phy 绝不能再出现 data-lanes（KK 实机定案：写了必 lock failed）
+if grep -qE 'pcie30phy *\{' target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts; then
+    if sed -n '/&pcie30phy *{/,/};/p' target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts | grep -qE '^[[:space:]]*data-lanes'; then
+        echo "!!! &pcie30phy 里出现了 data-lanes —— 实机定案会 lock failed，必须删掉"; exit 1
+    fi
+    echo "    marker OK: &pcie30phy 无 data-lanes（反向门禁）"
+fi
 
 # ============ 3. Maxio MAE0621A PHY 驱动（双千兆命门）============
 # 3a. 驱动源码 -> target/linux/rockchip/files/（OpenWrt 自动 overlay 进内核树）
