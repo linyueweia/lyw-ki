@@ -1,26 +1,27 @@
 --- a/drivers/net/phy/Makefile
 +++ b/drivers/net/phy/Makefile
-@@ -84,6 +84,7 @@ obj-$(CONFIG_MICROCHIP_T1S_PHY) += microchip_t1s.o
+@@ -84,6 +84,7 @@
+ obj-$(CONFIG_MICROCHIP_T1S_PHY) += microchip_t1s.o
  obj-$(CONFIG_MICROSEMI_PHY)	+= mscc/
  obj-$(CONFIG_MOTORCOMM_PHY)	+= motorcomm.o
 +obj-$(CONFIG_MAXIO_PHY)		+= maxio.o
  obj-$(CONFIG_NATIONAL_PHY)	+= national.o
  obj-$(CONFIG_NCN26000_PHY)	+= ncn26000.o
- obj-$(CONFIG_NXP_CBTX_PHY)	+= nxp-cbtx.o
+ nxp-c45-tja-objs		+= nxp-c45-tja11xx.o
 --- a/drivers/net/phy/Kconfig
 +++ b/drivers/net/phy/Kconfig
-@@ -319,6 +319,15 @@ config MOTORCOMM_PHY
+@@ -318,6 +318,14 @@
+ 	help
  	  Enables support for Motorcomm network PHYs.
  	  Currently supports YT85xx Gigabit Ethernet PHYs.
- 
++
 +config MAXIO_PHY
 +	tristate "Maxio PHYs"
 +	help
 +	  Enables support for Maxio network PHYs.
-+	  Currently supports MAE0621A Gigabit Ethernet PHY (0x7b744411/0x7b744412),
++	  Currently supports the MAE0621A Gigabit Ethernet PHY (0x7b744411/0x7b744412),
 +	  used on KICKPI K1 and similar RK3568 boards with dual Maxio PHYs.
-+	  Say Y here if you have such a board, otherwise say N. If unsure, say N.
-+
++	  Say Y here if you have such a board, otherwise say N.
+ 
  config NATIONAL_PHY
  	tristate "National Semiconductor PHYs"
- 	help
