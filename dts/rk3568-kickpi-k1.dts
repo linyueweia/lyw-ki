@@ -219,7 +219,12 @@
 		     &gmac0_rgmii_clk
 		     &gmac0_rgmii_bus>;
 	/* 厂商实机：reset = gpio3 PB3 active-low，MAC 侧单持有 */
-	snps,reset-gpio = <&gpio3 RK_PB3 GPIO_ACTIVE_LOW>;
+	/* 第二 PHY 复位：GPIO2_D3（/pinctrl/gpio@fe750000 = gpio2，pin 0x1b = 27）active-low，MAC 侧单持有。
+	   ⚠ 2026-10-14 实机定案：此处原写 <&gpio3 RK_PB3>（= gpio3 pin 11）指到了另一个控制器与引脚
+	   → 第二 PHY 一直被按在复位里 → 其 MDIO 地址 0/1/2 全无应答 → "Cannot attach to PHY (error: -19)"，
+	   整口不可用（第一口复位同为 gpio3 pin 7，故不受影响）。铁证：同板双口可用的飞牛线 DTB 里
+	   ethernet@fe2a0000 正是 gpio@fe750000(gpio2) pin 27。 */
+	snps,reset-gpio = <&gpio2 RK_PD3 GPIO_ACTIVE_LOW>;
 	snps,reset-active-low;
 	snps,reset-delays-us = <0 20000 100000>;
 	tx_delay = <0x21>;

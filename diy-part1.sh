@@ -47,7 +47,7 @@ mkdir -p target/linux/rockchip/dts/rk3568
 cp -f "$GITHUB_WORKSPACE/dts/rk3568-kickpi-k1.dts" target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts
 echo ">>> diy-part1: K1 DTS 已就位"
 for marker in '"KICKPI K1"' 'fan53555-reg' 'tx_delay = <0x21>' 'rx_delay = <0x3c>' \
-              'tx_delay = <0x2f>' 'rx_delay = <0x39>' 'RK_PB3' 'RK_PA7' 'post-power-on-delay-ms = <1000>'; do
+              'tx_delay = <0x2f>' 'rx_delay = <0x39>' 'RK_PD3' 'RK_PA7' 'post-power-on-delay-ms = <1000>'; do
     if grep -qF "$marker" target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts; then
         echo "    marker OK: $marker"
     else

@@ -8,7 +8,7 @@
  * initialize the device.
  *
  * // Maxio MAE0621A PHY driver for OpenWrt/iStoreOS 6.12 (KICKPI K1 等 RK3568 板)。
-// 源自 unifreq/linux-6.18.y drivers/net/phy/maxio.c，仅将 phy_disable_eee_mode
+// 源自 unifreq/linux-6.18.y drivers/net/phy/maxio.c；EEE 关闭改用 6.12 API（phy_disable_eee_mode
 // 适配为 6.12 单参数 API。 */
 
 #include <linux/delay.h>
@@ -173,8 +173,15 @@ static int mae0621a_config_init(struct phy_device *phydev)
 	ret = maxio_write_paged(phydev, 0xda0, 0x10, 0x0f13);
 	ret |= maxio_write_paged(phydev, 0xd92, 0x02, 0x200a);
 	ret |= maxio_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
-	/* 6.12 内核 API 为单参数（禁全部 EEE）；上游 6.13+ 才拆成按链路模式 */
-	phy_disable_eee_mode(phydev);
+	/* 关闭 EEE（本板实测：EEE/LPI 唤醒时序在 RK3568 dwmac + MAE0621A 上翻车，
+	   表现是"灯亮但整口间歇 Link Down"，用网高峰 34 次/3h；关掉后掉线归零）。
+	   ⚠ 版本适配：`phy_disable_eee_mode()` 在 6.12 已从 phylib 移除
+	   （v6.12 include/linux/phy.h 无该声明；实测编译报 implicit declaration 而挂 CI）。
+	   6.12 的等价做法 = 清掉 EEE 通告位 + 关掉 phylib 侧的 EEE 使能位，
+	   与上面那笔 MMD 写 MDIO_AN_EEE_ADV=0 相呼应（双保险：MMD 寄存器 + phylib 状态）。 */
+	linkmode_zero(phydev->advertising_eee);
+	phydev->eee_enabled = false;
+	phydev->eee_cfg.eee_enabled = false;
 
 	ret |= maxio_write_paged(phydev, 0xd8f, 0x00, 0x0300);
 	ret |= maxio_write_paged(phydev, 0xd90, 0x02, 0x1555);

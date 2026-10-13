@@ -119,6 +119,36 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
+    - name: 板级静态门禁（DTS 复位脚 / Maxio 6.12 API）
+      # 这两条都是"实测踩过、且只在实机/CI 才炸"的坑，必须在编译前拦住：
+      #   1) 第二口 PHY 复位脚：KK 线曾把 <&gpio3 RK_PB3>（gpio3 pin 11）当第二 PHY 复位，
+      #      实际必须 GPIO2_D3（gpio2 pin 0x1b=27）→ PHY 永不复位、MDIO 0/1/2 全无应答、
+      #      "Cannot attach to PHY (error: -19)"，整口不可用（飞牛线 DTB 对照定案）。
+      #   2) maxio.c 调用 phy_disable_eee_mode()：该函数 6.12 已从 phylib 移除
+      #      → implicit declaration，整个内核编译失败（CI 首跑即挂在这里）。
+      run: |
+        set -e
+        DTS=openwrt/target/linux/rockchip/dts/rk3568/rk3568-kickpi-k1.dts
+        DRV=openwrt/target/linux/rockchip/files/drivers/net/phy/maxio.c
+        echo "--- 1) 第二口 PHY 复位脚必须是 gpio2 PD3 ---"
+        grep -q 'snps,reset-gpio = <&gpio2 RK_PD3 GPIO_ACTIVE_LOW>;' "$DTS" \
+          || { echo "!! 第二口 reset-gpio 不是 gpio2 RK_PD3（写错 = PHY 永不复位、整口不可用）"; exit 1; }
+        if grep -q 'snps,reset-gpio = <&gpio3 RK_PB3' "$DTS"; then
+          echo "!! 第二口 reset-gpio 又写回了 gpio3 RK_PB3（历史 bug）"; exit 1
+        fi
+        grep -q 'snps,reset-gpio = <&gpio3 RK_PA7 GPIO_ACTIVE_LOW>;' "$DTS" \
+          || { echo "!! 第一口 reset-gpio（gpio3 PA7）缺失，两侧必须与飞牛线一致"; exit 1; }
+        echo "    OK  reset-gpio: eth1=gpio2 PD3 / eth0=gpio3 PA7"
+        echo "--- 2) Maxio 驱动必须用 6.12 API 关 EEE ---"
+        grep -q 'phy_disable_eee_mode' "$DRV" \
+          && { echo "!! maxio.c 仍在调用 phy_disable_eee_mode()（6.12 已移除 → 内核编译失败）"; exit 1; }
+        grep -q 'phydev->eee_cfg.eee_enabled = false;' "$DRV" \
+          || { echo "!! maxio.c 缺 6.12 关 EEE 的做法（eee_cfg.eee_enabled=false）"; exit 1; }
+        grep -q 'linkmode_zero(phydev->advertising_eee);' "$DRV" \
+          || { echo "!! maxio.c 缺 EEE 通告位清零（linkmode_zero(advertising_eee)）"; exit 1; }
+        echo "    OK  maxio.c 使用 6.12 EEE API"
+        echo "板级静态门禁: ALL PASS"
+
     - name: 更新 feeds
       run: cd openwrt && ./scripts/feeds update -a
 
