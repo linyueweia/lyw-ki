@@ -1,0 +1,38 @@
+name: Artifact name smoke test（构件名冒烟，实测 GitHub 是否接受）
+
+# 为什么留这个：lyw-ki 曾因构件名里带字面双引号（date 的转义引号写错）
+# 让 upload-artifact 整发失败，白跑一轮 2 小时编译。
+# 这个 workflow 只花几十秒，用手工触发的方式实测"名字 + 上传"这条路径。
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 生成与正式构建完全一致的构件名
+        run: |
+          echo "FILE_DATE=_$(date +%Y%m%d%H%M)" >> "$GITHUB_ENV"
+          echo "本次名称: OpenWrt_bin$FILE_DATE / OpenWrt_firmware$FILE_DATE"
+          mkdir -p dummy/bin dummy/fw
+          echo "bin payload" > dummy/bin/dummy.bin
+          echo "fw payload" > dummy/fw/dummy.img
+      - name: 上传 bin 构件（名字与正式构建同款）
+        uses: actions/upload-artifact@main
+        with:
+          name: OpenWrt_bin${{ env.FILE_DATE }}
+          path: dummy/bin
+      - name: 上传 firmware 构件（名字与正式构建同款）
+        uses: actions/upload-artifact@main
+        with:
+          name: OpenWrt_firmware${{ env.FILE_DATE }}
+          path: dummy/fw
+          if-no-files-found: error
+      - name: 顺带实测 release tag 是否合法
+        run: |
+          TAG="k1-v25.12$FILE_DATE-${{ github.sha }}"
+          echo "tag 将为: $TAG"
+          case "$TAG" in
+            *" "*|*'"'*|*'..'*|*'~'*|*'^'*|*':'*) echo "tag 非法 ✗"; exit 1 ;;
+            *) echo "tag 形态合法 ✓" ;;
+          esac
