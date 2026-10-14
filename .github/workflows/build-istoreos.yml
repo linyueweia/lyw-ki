@@ -174,12 +174,26 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        # 强制只编译 kickpi_k1（本仓库只出 K1 固件）
+        # 强制只编译 kickpi_k1（本仓库只出 K1 固件）。
+        # 【#5 事故定案】MULTI_PROFILE=n（单选）时 image.mk 只认老格式符号
+        #   CONFIG_TARGET_rockchip_armv8_DEVICE_<dev>=y
+        # 新格式 CONFIG_TARGET_DEVICE_... 仅 MULTI_PROFILE=y 时生效。
+        # 只写新格式 → 单选 choice 无效 → defconfig 落回默认设备 armsom_sige7
+        # → 发布出 RK3588 镜像（supported_devices=["armsom,sige7"]）。
+        # 因此：老格式行必须删干净，且新老两种格式都写 kickpi_k1（幂等双保险）。
         sed -i 's/^CONFIG_TARGET_ALL_PROFILES=y$/# CONFIG_TARGET_ALL_PROFILES is not set/' .config
         sed -i 's/^CONFIG_TARGET_MULTI_PROFILE=y$/# CONFIG_TARGET_MULTI_PROFILE is not set/' .config
         sed -i '/^CONFIG_TARGET_DEVICE_.*=y$/d' .config
+        sed -i '/^CONFIG_TARGET_rockchip_armv8_DEVICE_.*=y$/d' .config
+        echo 'CONFIG_TARGET_rockchip_armv8_DEVICE_kickpi_k1=y' >> .config
         echo 'CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_kickpi_k1=y' >> .config
         grep -E 'CONFIG_TARGET_.*=y|CONFIG_TARGET_DEVICE' .config
+        # 门禁：选中的设备必须有且只有 kickpi_k1（防再次落回默认设备）
+        SEL=$(grep -E '^CONFIG_TARGET_(DEVICE_)?rockchip_armv8_DEVICE_[^=]*=y$' .config | grep -v 'DEVICE_kickpi_k1=y' || true)
+        if [ -n "$SEL" ]; then echo "!! 非 K1 设备被选中: $SEL"; exit 1; fi
+        grep -qE '^CONFIG_TARGET_(DEVICE_)?rockchip_armv8_DEVICE_kickpi_k1=y$' .config \
+          || { echo "!! kickpi_k1 设备符号未生效"; exit 1; }
+        echo "设备选择门禁: OK（仅 kickpi_k1）"
         make download -j8
         find dl -size -1024c -exec rm -f {} \;
 
@@ -224,6 +238,19 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
+        # 产物与哈希文件名实一致门禁（lyw 仓库 sha256sums 同步处理的断言版；#5 事故防线）
+        IMG=istoreos-rockchip-armv8-kickpi_k1-squashfs-sysupgrade.img.gz
+        if [ ! -f "$IMG" ]; then
+          echo "!! 缺 K1 镜像 $IMG，实际 img 产物："; ls -1 *.img.gz 2>/dev/null || true; exit 1
+        fi
+        grep -qF "$IMG" sha256sums || { echo "!! sha256sums 缺少 $IMG 条目"; exit 1; }
+        OTHER=$(ls -1 istoreos-*.img.gz 2>/dev/null | grep -v 'kickpi_k1' || true)
+        if [ -n "$OTHER" ]; then echo "!! 混入非 K1 镜像: $OTHER"; exit 1; fi
+        # sha256sums 自校验：列出且已发布的文件必须逐个通过（buildinfo 等未发布项忽略）
+        if ! sha256sum -c sha256sums --ignore-missing >/dev/null 2>&1; then
+          echo "!! sha256sums 校验失败:"; sha256sum -c sha256sums --ignore-missing 2>&1 | grep -v ': OK$' || true; exit 1
+        fi
+        echo "产物/哈希门禁: OK（$IMG + sha256sums 一致）"
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
