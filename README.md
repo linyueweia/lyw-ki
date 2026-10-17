@@ -19,33 +19,17 @@ KICKPI K1（RK3568B2，双千兆 Maxio MAE0621A）不在 iStoreOS 官方设备�
    1000ms、仅 pcie3x2 NVMe。
 2. **Maxio MAE0621A PHY 驱动**（`kernel/maxio.c` + `kernel/100-*.patch`）
    双千兆命门。主线 6.12 无此驱动，注入 unifreq/linux-6.18.y 的 maxio.c；
-   **EEE 关闭改用 6.12 API**（`phy_disable_eee_mode()` 在 6.12 已被 phylib 移除，
-   照抄会 implicit declaration 让整发内核编译失败；改为 `linkmode_zero(advertising_eee)`
-   + `eee_enabled=false` + `eee_cfg.eee_enabled=false`，与驱动里那笔 MMD 写
-   `MDIO_AN_EEE_ADV=0` 双保险）。Kconfig/Makefile 锚在 iStoreOS 未改动的 motorcomm 行，
-   CONFIG_MAXIO_PHY=y 编进内核。
-3. **legacy.mk 设备定义**（diy-part1 追加）
-   官方原生 `Device/Legacy/rk3568` 模板，`DEVICE_PACKAGES += kmod-nvme
-   kmod-ata-ahci-dwc`。
-4. **board.d 网络脚本**（diy-part2 写入 `03_kickpi-k1`）
-   独立脚本走官方 board.d 标准机制（不覆盖官方 02_network）：
-   eth0=WAN、eth1=LAN（nanopi-r5c 同款惯例）。
-
-另：vermagic 修复（照抄 lyw，官方源 kmod 可装）。
-
-## 已修的两个"只在实机/CI 才炸"的坑（2026-10-14）
-
-1. **第二口 PHY 复位脚写错**：原写 `<&gpio3 RK_PB3>`（gpio3 pin 11），实机定案应为
+   ~~EEE 关闭改用 6.12 API~~ → **2026-10-17 起 maxio.c 里不再关 EEE**（驱动侧只保留 PHY 初始化）；
+   EEE 1G 改在 **DT 层**用 `eee-broken-1000t` 关闭（见下条与 README 的网口段），100M EEE 保持默认。
    **GPIO2_D3**（`/pinctrl/gpio@fe750000` = gpio2，pin 0x1b = 27）——铁证是与
    **同板双口可用的飞牛线 DTB** 逐属性对照：`ethernet@fe2a0000` 只有这一处不同。
    写错的后果不是"网口性能差"，而是 PHY 被一直按在复位里 → MDIO 地址 0/1/2 全无应答 →
    `Cannot attach to PHY (error: -19)` 整口不可用。
-2. **maxio.c 用了 6.12 已删除的 API**：`phy_disable_eee_mode()` 在 6.12 无声明 →
-   内核编译 `implicit declaration` 直接失败（CI 首跑即挂）。
-   6.12 的等价做法 = `linkmode_zero(phydev->advertising_eee)` + `eee_enabled = false`
-   + `eee_cfg.eee_enabled = false`（与 MMD 写 `MDIO_AN_EEE_ADV=0` 双保险）。
-两条都已加进 workflow 的**板级静态门禁**（编译前断言 DTS 复位脚取值 + maxio.c 的 6.12 EEE 做法）。
-
+2. **EEE 1G 的处理位置（2026-10-17 定案）**：DTS 的两个 PHY 节点写 `eee-broken-1000t`，
+   由内核 `of_set_phy_eee_broken()` 在每次自协商清掉 1000T 的 EEE 通告位；实测证据见下：
+   EEE 开着时 K1 的 `irq_rx_path_in_lpi_mode_n` 涨到 1400 万、`phy_eee_wakeup_error_n` 241，
+   表现为"灯亮、能发不能收"（ARP/DHCP 发得出去、收不到回应，ping 100% 丢而 carrier 不变），
+   对端关 EEE + 重协商后立刻恢复 0% 丢包。maxio.c 里**不再**写任何关 EEE 的代码。
 > 门禁自身的坑（已修）：第 2 条最初用裸 `grep -q 'phy_disable_eee_mode'` 判定，
 > 而 maxio.c 的**注释**里正好提到这个函数名（用来解释为何改成 6.12 写法）→
 > 假阳性把 CI 拦死。现在先剥掉 `//` 与 `/* */` 注释再判定：注释提及不算，

@@ -162,10 +162,13 @@ jobs:
           fi
         done
         echo "    OK  diy-part2 无 EEE 关闭件"
-        if grep -q "eee-broken-1000t" "$DTS"; then
-          echo "!! DTS 里出现 eee-broken-1000t（本板按官方默认不写）"; exit 1
+        # 2026-10-17 实机定案：EEE 1G 在这块板（RK3568 dwmac + Maxio MAE0621A）上会让 RX 侧
+        # LPI 疯狂进出（irq_rx_path_in_lpi_mode_n 1400 万次）→ "灯亮、能发不能收"，整口失联；
+        # 用内核官方机制 eee-broken-1000t 在内核层关掉 1G EEE（100M 保持默认），不装任何用户态脚本。
+        if [ "$(grep -c 'eee-broken-1000t' "$DTS")" -lt 2 ]; then
+          echo "!! DTS 的两个 PHY 节点都必须写 eee-broken-1000t（否则 EEE 1G 会打死 RX）"; exit 1
         fi
-        echo "    OK  DTS 未写 eee-broken-*"
+        echo "    OK  DTS 两个 PHY 节点均标了 eee-broken-1000t"
         echo "板级静态门禁: ALL PASS"
 
     - name: 更新 feeds
