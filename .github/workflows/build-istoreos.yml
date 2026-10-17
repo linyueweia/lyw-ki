@@ -119,7 +119,7 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: 板级静态门禁（DTS 复位脚 / Maxio 6.12 API）
+    - name: 板级静态门禁（DTS 复位脚 / EEE 保持官方默认）
       # 这两条都是"实测踩过、且只在实机/CI 才炸"的坑，必须在编译前拦住：
       #   1) 第二口 PHY 复位脚：KK 线曾把 <&gpio3 RK_PB3>（gpio3 pin 11）当第二 PHY 复位，
       #      实际必须 GPIO2_D3（gpio2 pin 0x1b=27）→ PHY 永不复位、MDIO 0/1/2 全无应答、
@@ -139,19 +139,33 @@ jobs:
         grep -q 'snps,reset-gpio = <&gpio3 RK_PA7 GPIO_ACTIVE_LOW>;' "$DTS" \
           || { echo "!! 第一口 reset-gpio（gpio3 PA7）缺失，两侧必须与飞牛线一致"; exit 1; }
         echo "    OK  reset-gpio: eth1=gpio2 PD3 / eth0=gpio3 PA7"
-        echo "--- 2) Maxio 驱动必须用 6.12 API 关 EEE ---"
-        # 注意：只查真实调用。maxio.c 的注释里会提到 phy_disable_eee_mode()
-        # （说明为何改成 6.12 写法），裸 grep 会误判——CI 首跑就是挂在这个假阳性上。
-        # 因此先剥掉 // 与 /* */ 注释，再对剥后代码做判定。
+        echo "--- 2) EEE 必须保持官方默认（驱动/DT 都不得关闭 EEE）---"
+        # 2026-10-17 改判：当初"EEE 开着 = 整口间歇掉线"的依据（对端 phy_eee_wakeup_error_n=8126）
+        # 在主路由 T68M 上被日志推翻 —— EEE 本就关闭时掉线仍发生，且每次都伴随对端重启。
+        # 现在唯一允许的 EEE 关闭方式是 DT 的 eee-broken-1000t，本板不写 → 反向断言。
         python3 -c 'import re,sys; src=open(sys.argv[1],encoding="utf-8",errors="replace").read(); code=re.sub(r"/\*.*?\*/","",src,flags=re.S); code="\n".join(l.split("//")[0] for l in code.splitlines()); open(sys.argv[2],"w").write(code)' "$DRV" /tmp/maxio-code.c
         if grep -qE '\bphy_disable_eee_mode[[:space:]]*\(' /tmp/maxio-code.c; then
-          echo "!! maxio.c 仍在调用 phy_disable_eee_mode()（6.12 已移除 → 内核编译失败）"; exit 1
+          echo "!! maxio.c 调用了 phy_disable_eee_mode()（6.12 已移除 → 编译失败）"; exit 1
         fi
-        grep -q 'phydev->eee_cfg.eee_enabled = false;' /tmp/maxio-code.c \
-          || { echo "!! maxio.c 缺 6.12 关 EEE 的做法（eee_cfg.eee_enabled=false）"; exit 1; }
-        grep -q 'linkmode_zero(phydev->advertising_eee);' /tmp/maxio-code.c \
-          || { echo "!! maxio.c 缺 EEE 通告位清零（linkmode_zero(advertising_eee)）"; exit 1; }
-        echo "    OK  maxio.c 使用 6.12 EEE API（已剥注释判定，无已移除 API 调用）"
+        if grep -q 'phydev->eee_cfg.eee_enabled = false;' /tmp/maxio-code.c \
+           || grep -q 'linkmode_zero(phydev->advertising_eee);' /tmp/maxio-code.c; then
+          echo "!! maxio.c 仍在 PHY 驱动里关闭 EEE（与官方默认不一致）"; exit 1
+        fi
+        if grep -qE 'MDIO_AN_EEE_ADV,[[:space:]]*0\)' /tmp/maxio-code.c; then
+          echo "!! maxio.c 仍往 MMD 写 EEE_ADV=0（等于关 EEE）"; exit 1
+        fi
+        echo "    OK  maxio.c 不再关闭 EEE"
+        echo "--- 3) diy-part2 不得再装 EEE 关闭件 ---"
+        for bad in kickpi-k1-eee-off "--set-eee" "99-kickpi-k1-eee-off" "S99kickpi-k1-eee-off"; do
+          if grep -q -- "$bad" "$GITHUB_WORKSPACE/$DIY_P2_SH"; then
+            echo "!! diy-part2 仍含 EEE 关闭件: $bad（与官方默认不一致）"; exit 1
+          fi
+        done
+        echo "    OK  diy-part2 无 EEE 关闭件"
+        if grep -q "eee-broken-1000t" "$DTS"; then
+          echo "!! DTS 里出现 eee-broken-1000t（本板按官方默认不写）"; exit 1
+        fi
+        echo "    OK  DTS 未写 eee-broken-*"
         echo "板级静态门禁: ALL PASS"
 
     - name: 更新 feeds
